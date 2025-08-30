@@ -1,183 +1,180 @@
-import React, { useState, useEffect } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { useAuth } from '../contexts/AuthContext'
-import { motion } from 'framer-motion'
-import { Eye, EyeOff, LogIn } from 'lucide-react'
+import React, { useState } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 
 const Login = () => {
-  const [formData, setFormData] = useState({
-    username: '',
-    password: ''
-  })
-  const [showPassword, setShowPassword] = useState(false)
-  const [loading, setLoading] = useState(false)
-  
-  const { login, loading: authLoading, isAuthenticated } = useAuth()
-  const navigate = useNavigate()
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [errors, setErrors] = useState({});
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  // Redirect if already authenticated
-  useEffect(() => {
-    if (!authLoading && isAuthenticated()) {
-      console.log('Login: User already authenticated, redirecting to dashboard')
-      navigate('/dashboard')
+  const { login } = useAuth();
+  const navigate = useNavigate();
+
+  const validateForm = () => {
+    const newErrors = {};
+    
+    if (!username.trim()) {
+      newErrors.username = 'Username is required';
     }
-  }, [authLoading, isAuthenticated, navigate])
-
-  // Show loading while checking authentication
-  if (authLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
-      </div>
-    )
-  }
-
-  // Don't show login page if user is authenticated
-  if (isAuthenticated()) {
-    return null
-  }
-
-  const handleChange = (e) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value
-    })
-  }
+    
+    if (!password) {
+      newErrors.password = 'Password is required';
+    }
+    
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
 
   const handleSubmit = async (e) => {
-    e.preventDefault()
-    setLoading(true)
+    e.preventDefault();
+    setError('');
     
-    const result = await login(formData)
-    if (result.success) {
-      navigate('/dashboard')
+    if (!validateForm()) {
+      return;
     }
-    setLoading(false)
-  }
+    
+    setLoading(true);
+
+    try {
+      await login(username, password);
+      navigate('/dashboard');
+    } catch (error) {
+      setError(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6 }}
-        className="max-w-md w-full space-y-8"
-      >
-        <div>
-          <div className="mx-auto h-12 w-12 bg-primary-600 rounded-lg flex items-center justify-center">
-            <LogIn className="h-6 w-6 text-white" />
+    <div className="min-h-screen bg-slate-50 flex flex-col justify-center px-6 py-12 lg:px-8">
+      <div className="sm:mx-auto sm:w-full sm:max-w-sm">
+        <div className="flex justify-center">
+          <div className="h-12 w-12 rounded-lg bg-slate-800 flex items-center justify-center">
+            <svg className="h-7 w-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
           </div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            Sign in to your account
-          </h2>
-          <p className="mt-2 text-center text-sm text-gray-600">
-            Or{' '}
-            <Link
-              to="/register"
-              className="font-medium text-primary-600 hover:text-primary-500"
-            >
-              create a new account
-            </Link>
-          </p>
         </div>
-        
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          <div className="space-y-4">
+        <h2 className="mt-8 text-center text-2xl font-semibold leading-9 tracking-tight text-gray-900">
+          Sign in to your account
+        </h2>
+        <p className="mt-2 text-center text-sm leading-6 text-gray-600">
+          Not a member?{' '}
+          <Link to="/register" className="font-medium text-slate-700 hover:text-slate-900">
+            Create an account
+          </Link>
+        </p>
+      </div>
+
+      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-sm">
+        <div className="bg-white border border-gray-200 rounded-lg p-8">
+          <form className="space-y-6" onSubmit={handleSubmit}>
+            {error && (
+              <div className="rounded-md bg-red-50 border border-red-200 p-4">
+                <div className="flex">
+                  <div className="flex-shrink-0">
+                    <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <div className="ml-3">
+                    <h3 className="text-sm font-medium text-red-800">Error</h3>
+                    <div className="mt-2 text-sm text-red-700">
+                      <p>{error}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div>
-              <label htmlFor="username" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="username" className="block text-sm font-medium leading-6 text-gray-900">
                 Username
               </label>
-              <input
-                id="username"
-                name="username"
-                type="text"
-                required
-                value={formData.username}
-                onChange={handleChange}
-                className="input-field mt-1"
-                placeholder="Enter your username"
-              />
+              <div className="mt-2">
+                <input
+                  id="username"
+                  name="username"
+                  type="text"
+                  autoComplete="username"
+                  required
+                  className={`block w-full rounded-md border py-2 px-3 text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-1 sm:text-sm ${
+                    errors.username 
+                      ? 'border-red-300 focus:border-red-500 focus:ring-red-500' 
+                      : 'border-gray-300 focus:border-slate-800 focus:ring-slate-800'
+                  }`}
+                  placeholder="Enter your username"
+                  value={username}
+                  onChange={(e) => {
+                    setUsername(e.target.value);
+                    if (errors.username) {
+                      setErrors({ ...errors, username: '' });
+                    }
+                  }}
+                />
+                {errors.username && (
+                  <p className="mt-1 text-sm text-red-600">{errors.username}</p>
+                )}
+              </div>
             </div>
-            
+
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="password" className="block text-sm font-medium leading-6 text-gray-900">
                 Password
               </label>
-              <div className="relative mt-1">
+              <div className="mt-2">
                 <input
                   id="password"
                   name="password"
-                  type={showPassword ? 'text' : 'password'}
+                  type="password"
+                  autoComplete="current-password"
                   required
-                  value={formData.password}
-                  onChange={handleChange}
-                  className="input-field pr-10"
+                  className={`block w-full rounded-md border py-2 px-3 text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-1 sm:text-sm ${
+                    errors.password 
+                      ? 'border-red-300 focus:border-red-500 focus:ring-red-500' 
+                      : 'border-gray-300 focus:border-slate-800 focus:ring-slate-800'
+                  }`}
                   placeholder="Enter your password"
+                  value={password}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    if (errors.password) {
+                      setErrors({ ...errors, password: '' });
+                    }
+                  }}
                 />
-                <button
-                  type="button"
-                  className="absolute inset-y-0 right-0 pr-3 flex items-center"
-                  onClick={() => setShowPassword(!showPassword)}
-                >
-                  {showPassword ? (
-                    <EyeOff className="h-5 w-5 text-gray-400" />
-                  ) : (
-                    <Eye className="h-5 w-5 text-gray-400" />
-                  )}
-                </button>
+                {errors.password && (
+                  <p className="mt-1 text-sm text-red-600">{errors.password}</p>
+                )}
               </div>
             </div>
-          </div>
 
-          <div className="flex items-center justify-between">
-            <div className="flex items-center">
-              <input
-                id="remember-me"
-                name="remember-me"
-                type="checkbox"
-                className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
-              />
-              <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-900">
-                Remember me
-              </label>
-            </div>
-
-            <div className="text-sm">
-              <a href="#" className="font-medium text-primary-600 hover:text-primary-500">
-                Forgot your password?
-              </a>
-            </div>
-          </div>
-
-          <div>
-            <button
-              type="submit"
-              disabled={loading}
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? (
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-              ) : (
-                'Sign in'
-              )}
-            </button>
-          </div>
-
-          <div className="text-center">
-            <p className="text-sm text-gray-600">
-              Don't have an account?{' '}
-              <Link
-                to="/register"
-                className="font-medium text-primary-600 hover:text-primary-500"
+            <div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="flex w-full justify-center rounded-md bg-slate-800 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-800 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                Sign up here
-              </Link>
-            </p>
-          </div>
-        </form>
-      </motion.div>
+                {loading ? (
+                  <div className="flex items-center">
+                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Signing in...
+                  </div>
+                ) : (
+                  'Sign in'
+                )}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
     </div>
-  )
-}
+  );
+};
 
-export default Login
+export default Login;

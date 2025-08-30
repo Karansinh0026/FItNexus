@@ -1,78 +1,58 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
-from .models import User, Gym, Member, Attendance, Exercise, WorkoutSession, WorkoutExercise, Streak
+from .models import User, Gym, MembershipPlan, Membership, Notice, ExerciseRoutine, GymApprovalHistory
 
 
-@admin.register(User)
 class CustomUserAdmin(UserAdmin):
-    list_display = ['username', 'email', 'first_name', 'last_name', 'role', 'is_active']
-    list_filter = ['role', 'is_active', 'is_staff']
-    search_fields = ['username', 'email', 'first_name', 'last_name']
-    ordering = ['username']
-    
+    list_display = ('username', 'email', 'first_name', 'last_name', 'user_type', 'is_staff')
+    list_filter = ('user_type', 'is_staff', 'is_superuser')
     fieldsets = UserAdmin.fieldsets + (
-        ('Additional Info', {'fields': ('role', 'phone', 'date_of_birth', 'profile_picture')}),
+        ('Additional Info', {'fields': ('user_type', 'phone', 'date_of_birth', 'address')}),
     )
-    
     add_fieldsets = UserAdmin.add_fieldsets + (
-        ('Additional Info', {'fields': ('role', 'phone', 'date_of_birth')}),
+        ('Additional Info', {'fields': ('user_type', 'phone', 'date_of_birth', 'address')}),
     )
 
+admin.site.register(User, CustomUserAdmin)
 
 @admin.register(Gym)
 class GymAdmin(admin.ModelAdmin):
-    list_display = ['name', 'owner', 'phone', 'email', 'member_count', 'created_at']
-    list_filter = ['created_at']
-    search_fields = ['name', 'address', 'owner__username']
-    readonly_fields = ['created_at', 'updated_at']
-    
-    def member_count(self, obj):
-        return obj.members.count()
-    member_count.short_description = 'Members'
+    list_display = ('name', 'owner', 'address', 'phone', 'status', 'created_at')
+    list_filter = ('status', 'created_at')
+    search_fields = ('name', 'owner__username', 'address')
+    readonly_fields = ('created_at', 'updated_at')
 
+@admin.register(MembershipPlan)
+class MembershipPlanAdmin(admin.ModelAdmin):
+    list_display = ('gym', 'duration_months', 'price', 'is_active', 'created_at')
+    list_filter = ('duration_months', 'is_active', 'created_at')
+    search_fields = ('gym__name',)
+    readonly_fields = ('created_at', 'updated_at')
 
-@admin.register(Member)
-class MemberAdmin(admin.ModelAdmin):
-    list_display = ['user', 'gym', 'experience_level', 'is_active', 'membership_start_date']
-    list_filter = ['experience_level', 'is_active', 'membership_start_date', 'gym']
-    search_fields = ['user__username', 'user__first_name', 'user__last_name', 'gym__name']
-    readonly_fields = ['membership_start_date']
+@admin.register(Membership)
+class MembershipAdmin(admin.ModelAdmin):
+    list_display = ('member', 'gym', 'plan', 'status', 'start_date', 'end_date')
+    list_filter = ('status', 'start_date', 'end_date', 'created_at')
+    search_fields = ('member__username', 'gym__name')
+    readonly_fields = ('created_at', 'updated_at')
 
+@admin.register(Notice)
+class NoticeAdmin(admin.ModelAdmin):
+    list_display = ('gym', 'title', 'created_at', 'is_active')
+    list_filter = ('gym', 'is_active', 'created_at')
+    search_fields = ('title', 'message', 'gym__name')
+    readonly_fields = ('created_at', 'updated_at')
 
-@admin.register(Attendance)
-class AttendanceAdmin(admin.ModelAdmin):
-    list_display = ['member', 'date', 'check_in_time', 'check_out_time']
-    list_filter = ['date', 'member__gym']
-    search_fields = ['member__user__username', 'member__user__first_name']
-    readonly_fields = ['date', 'check_in_time']
+@admin.register(ExerciseRoutine)
+class ExerciseRoutineAdmin(admin.ModelAdmin):
+    list_display = ('user', 'age', 'weight', 'height', 'experience_level', 'created_at')
+    list_filter = ('experience_level', 'created_at')
+    search_fields = ('user__username', 'user__first_name', 'user__last_name')
+    readonly_fields = ('created_at', 'updated_at')
 
-
-@admin.register(Exercise)
-class ExerciseAdmin(admin.ModelAdmin):
-    list_display = ['name', 'type', 'equipment', 'level', 'body_part', 'calories_burned', 'duration']
-    list_filter = ['type', 'equipment', 'level', 'body_part']
-    search_fields = ['name', 'description']
-    ordering = ['name']
-
-
-@admin.register(WorkoutSession)
-class WorkoutSessionAdmin(admin.ModelAdmin):
-    list_display = ['member', 'date', 'start_time', 'end_time']
-    list_filter = ['date', 'member__gym']
-    search_fields = ['member__user__username', 'member__user__first_name']
-    readonly_fields = ['date', 'start_time']
-
-
-@admin.register(WorkoutExercise)
-class WorkoutExerciseAdmin(admin.ModelAdmin):
-    list_display = ['workout_session', 'exercise', 'sets', 'reps', 'duration', 'weight']
-    list_filter = ['exercise__type', 'exercise__body_part']
-    search_fields = ['workout_session__member__user__username', 'exercise__name']
-
-
-@admin.register(Streak)
-class StreakAdmin(admin.ModelAdmin):
-    list_display = ['member', 'current_streak', 'longest_streak', 'last_workout_date']
-    list_filter = ['last_workout_date']
-    search_fields = ['member__user__username', 'member__user__first_name']
-    readonly_fields = ['last_workout_date']
+@admin.register(GymApprovalHistory)
+class GymApprovalHistoryAdmin(admin.ModelAdmin):
+    list_display = ('gym', 'admin', 'action', 'created_at')
+    list_filter = ('action', 'created_at')
+    search_fields = ('gym__name', 'admin__username')
+    readonly_fields = ('created_at',)

@@ -1,633 +1,529 @@
-import React, { useState, useEffect } from 'react'
-import { useAuth } from '../contexts/AuthContext'
-import { Link } from 'react-router-dom'
-import { motion } from 'framer-motion'
-import { 
-  Activity, 
-  TrendingUp, 
-  Flame, 
-  Calendar,
-  Clock,
-  Target,
-  Award,
-  Users,
-  Plus,
-  Building,
-  UserCheck,
-  Dumbbell,
-  CheckCircle
-} from 'lucide-react'
-import axios from 'axios'
-import toast from 'react-hot-toast'
+import React, { useEffect, useState, useCallback } from 'react';
+import { Link } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
+import axios from 'axios';
 
 const Dashboard = () => {
-  const { user } = useAuth()
-  const [stats, setStats] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [leaderboard, setLeaderboard] = useState([])
-  const [attendanceMarked, setAttendanceMarked] = useState(false)
-  const [attendanceTime, setAttendanceTime] = useState(null)
-  const [markingAttendance, setMarkingAttendance] = useState(false)
+  const { user } = useAuth();
+  const [gyms, setGyms] = useState([]);
+  const [memberships, setMemberships] = useState([]);
+  const [notices, setNotices] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchDashboardData = useCallback(async () => {
+    try {
+      console.log('Dashboard - fetchDashboardData called with user:', user);
+      console.log('Dashboard - User type:', user?.user_type);
+      
+      if (user?.user_type === 'gym_owner') {
+        const [gymsResponse, membershipsResponse, noticesResponse] = await Promise.all([
+          axios.get('/gyms/my/'),
+          axios.get('/memberships/'),
+          axios.get('/notices/')
+        ]);
+        console.log('Dashboard - Gym owner gyms:', gymsResponse.data);
+        console.log('Dashboard - User:', user);
+        setGyms(gymsResponse.data);
+        setMemberships(membershipsResponse.data);
+        setNotices(noticesResponse.data.slice(0, 3)); // Show only 3 recent notices
+      } else if (user?.user_type === 'member') {
+        const [membershipsResponse, noticesResponse] = await Promise.all([
+          axios.get('/memberships/'),
+          axios.get('/notices/')
+        ]);
+        setMemberships(membershipsResponse.data);
+        setNotices(noticesResponse.data.slice(0, 3)); // Show only 3 recent notices
+        
+
+      } else if (user?.user_type === 'admin') {
+        const [gymsResponse, noticesResponse] = await Promise.all([
+          axios.get('/admin/gyms/pending/'),
+          axios.get('/notices/')
+        ]);
+        setGyms(gymsResponse.data);
+        setNotices(noticesResponse.data.slice(0, 3)); // Show only 3 recent notices
+      }
+    } catch (error) {
+      console.error('Error fetching dashboard data:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
 
   useEffect(() => {
-    fetchDashboardData()
-    checkAttendanceToday()
-    
-    // Set up interval to check for date changes (every minute)
-    const interval = setInterval(() => {
-      const now = new Date()
-      const currentDate = now.toDateString()
-      
-      // If we have attendance marked, check if the date has changed
-      if (attendanceMarked && attendanceTime) {
-        const attendanceDate = new Date(attendanceTime).toDateString()
-        if (currentDate !== attendanceDate) {
-          // Date has changed, refresh attendance status
-          checkAttendanceToday()
-        }
-      }
-    }, 60000) // Check every minute
-    
-    return () => clearInterval(interval)
-  }, [attendanceMarked, attendanceTime])
+    fetchDashboardData();
+  }, [fetchDashboardData]);
 
-  const fetchDashboardData = async () => {
-    try {
-      const [statsResponse, leaderboardResponse] = await Promise.all([
-        axios.get('/api/dashboard/stats/'),
-        axios.get('/api/leaderboard/')
-      ])
-      
-      setStats(statsResponse.data)
-      setLeaderboard(leaderboardResponse.data)
-    } catch (error) {
-      console.error('Error fetching dashboard data:', error)
-      if (error.response?.status === 500) {
-        toast.error('Server error. Please try again later.')
-      } else if (error.response?.status === 404) {
-        // User is not enrolled in a gym
-        setStats({ not_enrolled: true })
-        setLeaderboard([])
-      } else if (error.response?.status === 403) {
-        toast.error('Access denied. Please check your permissions.')
-      } else {
-        toast.error('Failed to load dashboard data. Please refresh the page.')
-      }
-    } finally {
-      setLoading(false)
+  const getUserTypeDisplay = (userType) => {
+    switch (userType) {
+      case 'admin':
+        return 'Admin';
+      case 'gym_owner':
+        return 'Gym Owner';
+      case 'member':
+        return 'Member';
+      default:
+        return userType;
     }
-  }
+  };
 
-  const checkAttendanceToday = async () => {
-    try {
-      const response = await axios.get('/api/attendance/check-today/')
-      setAttendanceMarked(response.data.attendance_marked)
-      setAttendanceTime(response.data.attendance_time)
-    } catch (error) {
-      console.error('Error checking attendance:', error)
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'pending':
+        return 'bg-yellow-100 text-yellow-800 ring-yellow-600/20';
+      case 'approved':
+        return 'bg-green-100 text-green-800 ring-green-600/20';
+      case 'rejected':
+        return 'bg-red-100 text-red-800 ring-red-600/20';
+      case 'terminated':
+        return 'bg-gray-100 text-gray-800 ring-gray-600/20';
+      case 'active':
+        return 'bg-blue-100 text-blue-800 ring-blue-600/20';
+      case 'expired':
+        return 'bg-gray-100 text-gray-800 ring-gray-600/20';
+      default:
+        return 'bg-gray-100 text-gray-800 ring-gray-600/20';
     }
-  }
+  };
 
-  const markAttendance = async () => {
-    if (attendanceMarked) {
-      toast.error('Attendance already marked for today!')
-      return
-    }
+  const calculateRemainingDays = (endDate) => {
+    if (!endDate) return null;
+    const today = new Date();
+    const end = new Date(endDate);
+    const diffTime = end - today;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays;
+  };
 
-    setMarkingAttendance(true)
-    try {
-      await axios.post('/api/attendance/')
-      toast.success('Attendance marked successfully!')
-      setAttendanceMarked(true)
-      setAttendanceTime(new Date().toISOString())
-      fetchDashboardData() // Refresh data
-    } catch (error) {
-      console.error('Error marking attendance:', error)
-      if (error.response?.status === 400) {
-        toast.error('Attendance already marked for today!')
-        setAttendanceMarked(true)
-        checkAttendanceToday() // Refresh attendance status
-      } else {
-        toast.error('Failed to mark attendance')
-      }
-    } finally {
-      setMarkingAttendance(false)
-    }
+  if (!user) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading user data...</p>
+        </div>
+      </div>
+    );
   }
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+      <div className="flex justify-center items-center h-64">
+        <div className="inline-flex items-center px-4 py-2 font-semibold leading-6 text-slate-900 shadow-sm">
+          <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+          Loading dashboard...
+        </div>
       </div>
-    )
+    );
   }
-
-  // Different stat cards for members vs admins
-  const getStatCards = () => {
-    if (user?.role === 'admin') {
-      return [
-        {
-          title: 'Total Gyms',
-          value: stats?.total_gyms || 0,
-          icon: Building,
-          color: 'bg-blue-500',
-          change: '+1 gym'
-        },
-        {
-          title: 'Total Members',
-          value: stats?.total_members || 0,
-          icon: Users,
-          color: 'bg-green-500',
-          change: '+5 members'
-        },
-        {
-          title: 'Active Members',
-          value: stats?.active_members || 0,
-          icon: UserCheck,
-          color: 'bg-orange-500',
-          change: '+3 active'
-        },
-        {
-          title: 'Avg Attendance',
-          value: `${stats?.avg_attendance_rate || 0}%`,
-          icon: Calendar,
-          color: 'bg-purple-500',
-          change: '+2%'
-        }
-      ]
-    } else {
-      return [
-        {
-          title: 'Total Workouts',
-          value: stats?.total_workouts || 0,
-          icon: Activity,
-          color: 'bg-blue-500',
-          change: '+12%'
-        },
-        {
-          title: 'Current Streak',
-          value: stats?.current_streak || 0,
-          icon: TrendingUp,
-          color: 'bg-green-500',
-          change: '+3 days'
-        },
-        {
-          title: 'Calories Burned',
-          value: stats?.total_calories_burned || 0,
-          icon: Flame,
-          color: 'bg-orange-500',
-          change: '+450 cal'
-        },
-        {
-          title: attendanceMarked ? 'Today\'s Attendance' : 'Attendance Rate',
-          value: attendanceMarked ? '✓ Marked' : `${stats?.attendance_rate || 0}%`,
-          icon: attendanceMarked ? CheckCircle : Calendar,
-          color: attendanceMarked ? 'bg-green-500' : 'bg-purple-500',
-          change: attendanceMarked ? 'Today' : '+5%'
-        }
-      ]
-    }
-  }
-
-  const statCards = getStatCards()
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="max-w-6xl mx-auto">
       {/* Welcome Section */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="mb-8"
-      >
-        <h1 className="text-3xl font-bold text-gray-900">
-          Welcome back, {user?.first_name || user?.username}!
-        </h1>
-        <p className="text-gray-600 mt-2">
-          {user?.role === 'admin' 
-            ? 'Here\'s your gym management overview' 
-            : 'Here\'s your fitness overview for today'
-          }
-        </p>
-      </motion.div>
-
-      {/* Gym Enrollment Prompt - Only show for members who are not enrolled */}
-      {user?.role === 'member' && stats?.not_enrolled && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="mb-8"
-        >
-          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-6">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center">
-                <Building className="w-8 h-8 text-blue-600 mr-4" />
-                <div>
-                  <h2 className="text-lg font-semibold text-gray-900">Join a Gym</h2>
-                  <p className="text-gray-600">You need to enroll in a gym to start tracking your fitness journey</p>
-                </div>
-              </div>
-              <Link
-                to="/gym-enrollment"
-                className="btn-primary flex items-center gap-2"
-              >
-                <Building className="w-4 h-4" />
-                Find Gym
-              </Link>
+      <div className="mb-8">
+        <div className="bg-slate-800 text-white p-6 rounded-lg">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-semibold mb-2">
+                Hey {user?.first_name}, welcome back!
+              </h1>
+              <p className="text-slate-300 mb-3">
+                {user?.user_type === 'member' && "How's your fitness journey going?"}
+                {user?.user_type === 'gym_owner' && "Let's see how your gym is doing today."}
+                {user?.user_type === 'admin' && "Here's what needs your attention."}
+              </p>
+              <span className="inline-block bg-slate-700 px-3 py-1 rounded text-sm">
+                {getUserTypeDisplay(user?.user_type || '')}
+              </span>
+            </div>
+            <div className="w-12 h-12 bg-slate-700 rounded-full flex items-center justify-center text-lg font-medium">
+              {user?.first_name?.charAt(0)}{user?.last_name?.charAt(0)}
             </div>
           </div>
-        </motion.div>
-      )}
-
-      {/* Gym Information - Only show for enrolled members */}
-      {user?.role === 'member' && stats?.gym_info && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="mb-8"
-        >
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center">
-                <Building className="w-8 h-8 text-primary-600 mr-4" />
-                <div>
-                  <h2 className="text-lg font-semibold text-gray-900">Your Gym</h2>
-                  <p className="text-gray-600">{stats.gym_info.name}</p>
-                  <p className="text-sm text-gray-500">{stats.gym_info.address}</p>
-                </div>
-              </div>
-              <div className="text-right">
-                <p className="text-sm text-gray-600">{stats.gym_info.phone}</p>
-                <p className="text-sm text-gray-600">{stats.gym_info.email}</p>
-              </div>
-            </div>
-          </div>
-        </motion.div>
-      )}
-
-      {/* Quick Actions - Only show for enrolled members */}
-      {user?.role === 'member' && stats?.gym_info && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="mb-8"
-        >
-          <div className="flex flex-wrap gap-4">
-            <div className="flex flex-col gap-2">
-              <button
-                onClick={markAttendance}
-                className={`flex items-center gap-2 ${
-                  attendanceMarked 
-                    ? 'bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors duration-200 cursor-not-allowed' 
-                    : 'btn-primary'
-                }`}
-                disabled={attendanceMarked || markingAttendance}
-              >
-                {markingAttendance ? (
-                  <svg className="animate-spin w-4 h-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                ) : attendanceMarked ? (
-                  <CheckCircle className="w-4 h-4" />
-                ) : (
-                  <Plus className="w-4 h-4" />
-                )}
-                {attendanceMarked ? 'Attendance Marked' : 'Mark Attendance'}
-              </button>
-              {attendanceMarked && attendanceTime && (
-                <p className="text-xs text-gray-600 text-center">
-                  Marked at {new Date(attendanceTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </p>
-              )}
-            </div>
-            <Link
-              to="/exercise-tracking"
-              className="btn-secondary flex items-center gap-2"
-            >
-              <Dumbbell className="w-4 h-4" />
-              Log Exercise
-            </Link>
-          </div>
-        </motion.div>
-      )}
-
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        {statCards.map((stat, index) => (
-          <motion.div
-            key={stat.title}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: index * 0.1 }}
-            className="card-hover"
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">{stat.title}</p>
-                <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
-                <p className="text-sm text-green-600">{stat.change}</p>
-              </div>
-              <div className={`p-3 rounded-lg ${stat.color}`}>
-                <stat.icon className="w-6 h-6 text-white" />
-              </div>
-            </div>
-          </motion.div>
-        ))}
+        </div>
       </div>
 
-      {/* Main Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Content varies based on user role */}
-        {user?.role === 'admin' ? (
-          // Admin Dashboard Content - Check if user owns a gym
-          <>
-            {stats?.gym_info ? (
-              // Gym Owner Dashboard - Show their gym info and members
-              <>
-                {/* Gym Owner Info */}
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.2 }}
-                  className="lg:col-span-2"
-                >
-                  <div className="card">
-                    <div className="flex items-center justify-between mb-6">
-                      <h2 className="text-xl font-semibold text-gray-900">My Gym Overview</h2>
-                      <Link 
-                        to="/my-gym"
-                        className="text-primary-600 hover:text-primary-700 text-sm font-medium"
-                      >
-                        Manage Gym
-                      </Link>
-                    </div>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                      <div className="bg-blue-50 p-4 rounded-lg">
-                        <div className="flex items-center">
-                          <Users className="w-8 h-8 text-blue-600 mr-3" />
-                          <div>
-                            <p className="text-sm text-blue-600">Total Members</p>
-                            <p className="text-2xl font-bold text-blue-900">{stats.total_members || 0}</p>
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className="bg-green-50 p-4 rounded-lg">
-                        <div className="flex items-center">
-                          <Activity className="w-8 h-8 text-green-600 mr-3" />
-                          <div>
-                            <p className="text-sm text-green-600">Active Members</p>
-                            <p className="text-2xl font-bold text-green-900">{stats.active_members || 0}</p>
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className="bg-purple-50 p-4 rounded-lg">
-                        <div className="flex items-center">
-                          <TrendingUp className="w-8 h-8 text-purple-600 mr-3" />
-                          <div>
-                            <p className="text-sm text-purple-600">Avg Attendance</p>
-                            <p className="text-2xl font-bold text-purple-900">{stats.avg_attendance_rate || 0}%</p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="border-t pt-6">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-4">Gym Information</h3>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <p className="text-sm text-gray-600">Gym Name</p>
-                          <p className="font-medium text-gray-900">{stats.gym_info.name}</p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-gray-600">Address</p>
-                          <p className="font-medium text-gray-900">{stats.gym_info.address}</p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-gray-600">Phone</p>
-                          <p className="font-medium text-gray-900">{stats.gym_info.phone}</p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-gray-600">Email</p>
-                          <p className="font-medium text-gray-900">{stats.gym_info.email}</p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </motion.div>
-              </>
-            ) : (
-              // Super Admin Dashboard - Show system overview
-              <>
-                {/* System Overview */}
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.2 }}
-                  className="lg:col-span-2"
-                >
-                  <div className="card">
-                    <div className="flex items-center justify-between mb-6">
-                      <h2 className="text-xl font-semibold text-gray-900">System Overview</h2>
-                      <Link 
-                        to="/gym-management"
-                        className="text-primary-600 hover:text-primary-700 text-sm font-medium"
-                      >
-                        Manage Gyms
-                      </Link>
-                    </div>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                      <div className="bg-blue-50 p-4 rounded-lg">
-                        <div className="flex items-center">
-                          <Building className="w-8 h-8 text-blue-600 mr-3" />
-                          <div>
-                            <p className="text-sm text-blue-600">Total Gyms</p>
-                            <p className="text-2xl font-bold text-blue-900">{stats.total_gyms || 0}</p>
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className="bg-green-50 p-4 rounded-lg">
-                        <div className="flex items-center">
-                          <Users className="w-8 h-8 text-green-600 mr-3" />
-                          <div>
-                            <p className="text-sm text-green-600">Total Members</p>
-                            <p className="text-2xl font-bold text-green-900">{stats.total_members || 0}</p>
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className="bg-purple-50 p-4 rounded-lg">
-                        <div className="flex items-center">
-                          <TrendingUp className="w-8 h-8 text-purple-600 mr-3" />
-                          <div>
-                            <p className="text-sm text-purple-600">Active Members</p>
-                            <p className="text-2xl font-bold text-purple-900">{stats.active_members || 0}</p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="border-t pt-6">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-4">Top Performing Members</h3>
-                      {stats?.top_members?.length > 0 ? (
-                        <div className="space-y-3">
-                          {stats.top_members.map((member, index) => (
-                            <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                              <div className="flex items-center space-x-3">
-                                <div className="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center">
-                                  <Award className="w-4 h-4 text-primary-600" />
-                                </div>
-                                <div>
-                                  <p className="font-medium text-gray-900">{member.username}</p>
-                                  <p className="text-sm text-gray-600">
-                                    Longest streak: {member.longest_streak} days
-                                  </p>
-                                </div>
-                              </div>
-                              <div className="text-right">
-                                <p className="text-sm font-medium text-gray-900">
-                                  Current: {member.current_streak} days
-                                </p>
-                                <p className="text-xs text-gray-600">
-                                  Rank #{index + 1}
-                                </p>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="text-center py-6">
-                          <Users className="w-12 h-12 text-gray-400 mx-auto mb-2" />
-                          <p className="text-gray-600">No members yet</p>
-                          <p className="text-sm text-gray-500">Members will appear here once they join</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </motion.div>
-              </>
-            )}
-          </>
-        ) : (
-          // Member Dashboard Content
-          <>
-            {/* Recent Workouts */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-              className="lg:col-span-2"
-            >
-              <div className="card">
-                <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-xl font-semibold text-gray-900">Recent Workouts</h2>
-                  <Link 
-                    to="/exercise-tracking"
-                    className="text-primary-600 hover:text-primary-700 text-sm font-medium"
-                  >
-                    View All
-                  </Link>
+      {/* Stats Section */}
+      <div className="mb-8">
+
+        {user?.user_type === 'gym_owner' && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-white border border-gray-300 p-4 rounded">
+              <div className="flex items-center">
+                <div className="w-10 h-10 bg-slate-200 rounded flex items-center justify-center mr-3">
+                  <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                  </svg>
                 </div>
-                
-                {stats?.recent_workouts?.length > 0 ? (
-                  <div className="space-y-4">
-                    {stats.recent_workouts.map((workout, index) => (
-                      <div key={index} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                        <div className="flex items-center space-x-4">
-                          <div className="w-10 h-10 bg-primary-100 rounded-lg flex items-center justify-center">
-                            <Dumbbell className="w-5 h-5 text-primary-600" />
-                          </div>
-                          <div>
-                            <p className="font-medium text-gray-900">{workout.exercise_name}</p>
-                            <p className="text-sm text-gray-600">
-                              {new Date(workout.date).toLocaleDateString()}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-sm font-medium text-gray-900">
-                            {workout.calories_burned} calories
-                          </p>
-                          <p className="text-xs text-gray-600">
-                            {workout.duration} minutes
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-8">
-                    <Dumbbell className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                    <p className="text-gray-600">No recent workouts</p>
-                    <p className="text-sm text-gray-500">Start tracking your exercises to see your progress!</p>
-                    <Link
-                      to="/exercise-tracking"
-                      className="btn-primary mt-4 inline-flex items-center gap-2"
-                    >
-                      <Plus className="w-4 h-4" />
-                      Log Your First Exercise
-                    </Link>
-                  </div>
-                )}
+                <div>
+                  <p className="text-sm text-gray-600">Your Gyms</p>
+                  <p className="text-xl font-semibold text-gray-900">{gyms.length}</p>
+                </div>
               </div>
-            </motion.div>
-          </>
+            </div>
+            <div className="bg-white border border-gray-300 p-4 rounded">
+              <div className="flex items-center">
+                <div className="w-10 h-10 bg-slate-200 rounded flex items-center justify-center mr-3">
+                  <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Active Members</p>
+                  <p className="text-xl font-semibold text-gray-900">
+                    {memberships.filter(m => m.status === 'approved').length}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="bg-white border border-gray-300 p-4 rounded">
+              <div className="flex items-center">
+                <div className="w-10 h-10 bg-slate-200 rounded flex items-center justify-center mr-3">
+                  <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Pending Requests</p>
+                  <p className="text-xl font-semibold text-gray-900">
+                    {memberships.filter(m => m.status === 'pending').length}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
         )}
 
-        {/* Leaderboard - Same for both */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-        >
-          <div className="card">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-semibold text-gray-900">Leaderboard</h2>
-              <Award className="w-5 h-5 text-primary-600" />
+        {user?.user_type === 'admin' && (
+          <div className="bg-white border border-gray-300 p-4 rounded">
+            <div className="flex items-center">
+              <div className="w-10 h-10 bg-slate-200 rounded flex items-center justify-center mr-3">
+                <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-sm text-gray-600">Gyms Pending Review</p>
+                <p className="text-xl font-semibold text-gray-900">{gyms.length}</p>
+              </div>
             </div>
-            
-            {leaderboard.length > 0 ? (
-              <div className="space-y-3">
-                {leaderboard.map((entry, index) => (
-                  <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div className="flex items-center space-x-3">
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
-                        index === 0 ? 'bg-yellow-500 text-white' :
-                        index === 1 ? 'bg-gray-400 text-white' :
-                        index === 2 ? 'bg-orange-500 text-white' :
-                        'bg-gray-200 text-gray-700'
-                      }`}>
-                        {index + 1}
+          </div>
+        )}
+      </div>
+
+      {/* Member Dashboard */}
+      {user?.user_type === 'member' && (
+        <div className="mb-8">
+          <div className="bg-white border border-gray-300 rounded">
+            <div className="p-4 border-b border-gray-300">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Your Memberships</h3>
+                  <p className="text-sm text-gray-600">Keep track of your gym memberships</p>
+                </div>
+                <button
+                  onClick={fetchDashboardData}
+                  className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50"
+                >
+                  Refresh
+                </button>
+              </div>
+            </div>
+          </div>
+          <div className="p-6">
+            {memberships.length === 0 ? (
+              <div className="text-center py-12">
+                <div className="mx-auto h-16 w-16 rounded-full bg-gray-100 flex items-center justify-center mb-4">
+                  <svg className="h-8 w-8 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">No memberships yet</h3>
+                <p className="text-gray-600 mb-6">Get started by browsing available gyms and joining your first membership.</p>
+                <div className="space-x-3">
+                  <Link
+                    to="/gyms"
+                    className="inline-flex items-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 transition-colors duration-200"
+                  >
+                    Browse Gyms
+                  </Link>
+                  <Link
+                    to="/my-memberships"
+                    className="inline-flex items-center rounded-lg bg-gray-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-gray-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-600 transition-colors duration-200"
+                  >
+                    My Memberships
+                  </Link>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {memberships.map((membership) => {
+                  const remainingDays = calculateRemainingDays(membership.end_date);
+                  return (
+                    <div key={membership.id} className="bg-gray-50 rounded-lg p-6 border border-gray-200">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-4">
+                          <div className="h-12 w-12 rounded-lg bg-blue-100 flex items-center justify-center">
+                            <svg className="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+                            </svg>
+                          </div>
+                          <div>
+                            <h4 className="text-lg font-semibold text-gray-900">{membership.gym_name}</h4>
+                            <p className="text-sm text-gray-600">{membership.plan_details}</p>
+                            {remainingDays !== null && (
+                              <p className="text-sm text-gray-500">
+                                {remainingDays > 0 ? `${remainingDays} days remaining` : 'Expired'}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-3">
+                          <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset ${getStatusColor(membership.status)}`}>
+                            {membership.status}
+                          </span>
+                          {membership.status === 'approved' && (
+                            <Link
+                              to={`/gyms/${membership.gym}/attendance`}
+                              className="inline-flex items-center rounded-lg bg-green-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-500 transition-colors duration-200"
+                            >
+                              Mark Attendance
+                            </Link>
+                          )}
+                        </div>
                       </div>
-                      <span className="font-medium text-gray-900">{entry.username}</span>
                     </div>
-                    <div className="text-right">
-                      <p className="text-sm font-medium text-gray-900">{entry.longest_streak} days</p>
-                      <p className="text-xs text-gray-600">Current: {entry.current_streak}</p>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Gym Owner Dashboard */}
+      {user?.user_type === 'gym_owner' && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200">
+          <div className="px-6 py-6 border-b border-gray-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">My Gyms</h3>
+                <p className="mt-1 text-sm text-gray-600">Manage your gym registrations and memberships.</p>
+              </div>
+              {gyms.some(gym => gym.status === 'rejected') ? (
+                <Link
+                  to="/gym-registration"
+                  className="inline-flex items-center rounded-lg bg-orange-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-orange-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-600 transition-colors duration-200"
+                >
+                  Update Gym
+                </Link>
+              ) : (
+                <Link
+                  to="/gym-registration"
+                  className="inline-flex items-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 transition-colors duration-200"
+                >
+                  Register New Gym
+                </Link>
+              )}
+            </div>
+          </div>
+          <div className="p-6">
+            {gyms.length === 0 ? (
+              <div className="text-center py-12">
+                <div className="mx-auto h-16 w-16 rounded-full bg-gray-100 flex items-center justify-center mb-4">
+                  <svg className="h-8 w-8 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">No gyms registered</h3>
+                <p className="text-gray-600 mb-6">Start by registering your first gym to begin attracting members.</p>
+                <Link
+                  to="/gym-registration"
+                  className="inline-flex items-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 transition-colors duration-200"
+                >
+                  Register Your First Gym
+                </Link>
+              </div>
+            ) : gyms.some(gym => gym.status === 'rejected') ? (
+              <div className="text-center py-12">
+                <div className="mx-auto h-16 w-16 rounded-full bg-red-100 flex items-center justify-center mb-4">
+                  <svg className="h-8 w-8 text-red-400" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">Gym Registration Rejected</h3>
+                <p className="text-gray-600 mb-6">Your gym registration was rejected. You can update the details and resubmit for approval.</p>
+                <Link
+                  to="/gym-registration"
+                  className="inline-flex items-center rounded-lg bg-orange-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-orange-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-600 transition-colors duration-200"
+                >
+                  Update Gym
+                </Link>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {gyms.map((gym) => (
+                  <div key={gym.id} className="bg-gray-50 rounded-lg p-6 border border-gray-200">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-4">
+                        <div className="h-12 w-12 rounded-lg bg-green-100 flex items-center justify-center">
+                          <svg className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                          </svg>
+                        </div>
+                        <div>
+                          <h4 className="text-lg font-semibold text-gray-900">{gym.name}</h4>
+                          <p className="text-sm text-gray-600">{gym.address}</p>
+                          <p className="text-sm text-gray-500">{gym.phone}</p>
+                          {gym.status === 'rejected' && gym.rejection_reason && (
+                            <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded">
+                              <p className="text-xs text-red-700">
+                                <strong>Rejection Reason:</strong> {gym.rejection_reason}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-3">
+                        <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset ${getStatusColor(gym.status)}`}>
+                          {gym.status === 'approved' ? 'Approved' : gym.status === 'rejected' ? 'Rejected' : 'Pending Approval'}
+                        </span>
+                        <Link
+                          to="/gym-management"
+                          className="inline-flex items-center rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 transition-colors duration-200"
+                        >
+                          Manage
+                        </Link>
+                      </div>
                     </div>
                   </div>
                 ))}
               </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Admin Dashboard */}
+      {user?.user_type === 'admin' && (
+        <>
+
+
+          {/* Pending Approvals */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200">
+            <div className="px-6 py-6 border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Pending Gym Approvals</h3>
+                  <p className="mt-1 text-sm text-gray-600">Review and approve gym registration requests.</p>
+                </div>
+                <Link
+                  to="/admin/gym-approvals"
+                  className="inline-flex items-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 transition-colors duration-200"
+                >
+                  View All Approvals
+                </Link>
+              </div>
+            </div>
+            <div className="p-6">
+              {gyms.length === 0 ? (
+                <div className="text-center py-12">
+                  <div className="mx-auto h-16 w-16 rounded-full bg-gray-100 flex items-center justify-center mb-4">
+                    <svg className="h-8 w-8 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">No pending approvals</h3>
+                  <p className="text-gray-600 mb-6">All gym registrations have been reviewed and processed.</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {gyms.map((gym) => (
+                    <div key={gym.id} className="bg-gray-50 rounded-lg p-6 border border-gray-200">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-4">
+                          <div className="h-12 w-12 rounded-lg bg-yellow-100 flex items-center justify-center">
+                            <svg className="h-6 w-6 text-yellow-600" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                          </div>
+                          <div>
+                            <h4 className="text-lg font-semibold text-gray-900">{gym.name}</h4>
+                            <p className="text-sm text-gray-600">{gym.address}</p>
+                            <p className="text-sm text-gray-500">Owner: {gym.owner_name}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-3">
+                          <span className="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset bg-yellow-100 text-yellow-800 ring-yellow-600/20">
+                            Pending Review
+                          </span>
+                          <Link
+                            to="/admin/gym-approvals"
+                            className="inline-flex items-center rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 transition-colors duration-200"
+                          >
+                            Review
+                          </Link>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Notice Board Section */}
+      <div className="mb-8">
+        <div className="bg-white border border-gray-300 rounded">
+          <div className="p-4 border-b border-gray-300">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Recent Notices</h3>
+                <p className="text-sm text-gray-600">Latest updates from your gyms</p>
+              </div>
+              <Link
+                to="/notice-board"
+                className="px-3 py-1 text-sm bg-slate-800 text-white rounded hover:bg-slate-700"
+              >
+                View All
+              </Link>
+            </div>
+          </div>
+          <div className="p-4">
+            {notices.length === 0 ? (
+              <div className="text-center py-6">
+                <p className="text-sm text-gray-600">No notices yet</p>
+                <p className="text-xs text-gray-500">Check back later for updates</p>
+              </div>
             ) : (
-              <div className="text-center py-8">
-                <Award className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <p className="text-gray-600">No leaderboard data</p>
-                <p className="text-sm text-gray-500">Start working out to see rankings!</p>
+              <div className="space-y-3">
+                {notices.map((notice) => (
+                  <div key={notice.id} className="border-b border-gray-200 pb-3 last:border-b-0">
+                    <div className="flex items-start space-x-3">
+                      <div className="w-2 h-2 bg-slate-400 rounded-full mt-2 flex-shrink-0"></div>
+                      <div className="flex-1">
+                        <h4 className="text-sm font-medium text-gray-900">{notice.title}</h4>
+                        <p className="text-xs text-gray-600 mb-1">{notice.gym_name}</p>
+                        <p className="text-sm text-gray-700">{notice.message}</p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          {notice.created_at_formatted}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
-        </motion.div>
+        </div>
       </div>
     </div>
-  )
-}
+  );
+};
 
-export default Dashboard
+export default Dashboard;
